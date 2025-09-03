@@ -39,6 +39,7 @@ import (
 	"sigs.k8s.io/kueue/pkg/controller/admissionchecks/provisioning"
 	"sigs.k8s.io/kueue/pkg/controller/tas"
 	"sigs.k8s.io/kueue/pkg/features"
+	"sigs.k8s.io/kueue/pkg/util/admissioncheck"
 	utiltas "sigs.k8s.io/kueue/pkg/util/tas"
 	"sigs.k8s.io/kueue/pkg/util/testing"
 	testingnode "sigs.k8s.io/kueue/pkg/util/testingjobs/node"
@@ -1485,7 +1486,7 @@ var _ = ginkgo.Describe("Topology Aware Scheduling", ginkgo.Ordered, func() {
 
 				ginkgo.By("verify the workload is evicted due to no replacement possible", func() {
 					util.FinishEvictionForWorkloads(ctx, k8sClient, wl1)
-					util.ExpectEvictedWorkloadsTotalMetric(clusterQueue.Name, kueue.WorkloadEvictedDueToNodeFailures, 1)
+					util.ExpectEvictedWorkloadsTotalMetric(clusterQueue.Name, kueue.WorkloadEvictedDueToNodeFailures, "", 1)
 					gomega.Eventually(func(g gomega.Gomega) {
 						updatedWl := &kueue.Workload{}
 						g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(wl1), updatedWl)).To(gomega.Succeed())
@@ -2528,7 +2529,7 @@ var _ = ginkgo.Describe("Topology Aware Scheduling", ginkgo.Ordered, func() {
 				ginkgo.By("await for the check to be ready", func() {
 					gomega.Eventually(func(g gomega.Gomega) {
 						g.Expect(k8sClient.Get(ctx, wlKey, wl1)).To(gomega.Succeed())
-						state := workload.FindAdmissionCheck(wl1.Status.AdmissionChecks, kueue.AdmissionCheckReference(ac.Name))
+						state := admissioncheck.FindAdmissionCheck(wl1.Status.AdmissionChecks, kueue.AdmissionCheckReference(ac.Name))
 						g.Expect(state).NotTo(gomega.BeNil())
 						g.Expect(state.State).To(gomega.Equal(kueue.CheckStateReady))
 					}, util.Timeout, time.Millisecond).Should(gomega.Succeed())

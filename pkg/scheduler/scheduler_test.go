@@ -47,12 +47,12 @@ import (
 	config "sigs.k8s.io/kueue/apis/config/v1beta1"
 	kueuealpha "sigs.k8s.io/kueue/apis/kueue/v1alpha1"
 	kueue "sigs.k8s.io/kueue/apis/kueue/v1beta1"
-	"sigs.k8s.io/kueue/pkg/cache"
+	qcache "sigs.k8s.io/kueue/pkg/cache/queue"
+	schdcache "sigs.k8s.io/kueue/pkg/cache/scheduler"
 	"sigs.k8s.io/kueue/pkg/constants"
 	tasindexer "sigs.k8s.io/kueue/pkg/controller/tas/indexer"
 	"sigs.k8s.io/kueue/pkg/features"
 	"sigs.k8s.io/kueue/pkg/metrics"
-	"sigs.k8s.io/kueue/pkg/queue"
 	"sigs.k8s.io/kueue/pkg/resources"
 	"sigs.k8s.io/kueue/pkg/scheduler/flavorassigner"
 	"sigs.k8s.io/kueue/pkg/util/limitrange"
@@ -3292,8 +3292,8 @@ func TestSchedule(t *testing.T) {
 			}
 			cl := clientBuilder.Build()
 			recorder := &utiltesting.EventRecorder{}
-			cqCache := cache.New(cl)
-			qManager := queue.NewManager(cl, cqCache)
+			cqCache := schdcache.New(cl)
+			qManager := qcache.NewManager(cl, cqCache)
 			// Workloads are loaded into queues or clusterQueues as we add them.
 			for _, q := range allQueues {
 				if err := qManager.AddLocalQueue(ctx, &q); err != nil {
@@ -3697,7 +3697,8 @@ func TestEntryOrdering(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			features.SetFeatureGateDuringTest(t, features.PrioritySortingWithinCohort, tc.prioritySorting)
-			iter := makeIterator(t.Context(), tc.input, tc.workloadOrdering, false)
+			ctx, _ := utiltesting.ContextWithLog(t)
+			iter := makeIterator(ctx, tc.input, tc.workloadOrdering, false)
 			order := make([]string, len(tc.input))
 			for i := range tc.input {
 				order[i] = iter.pop().Obj.Name
@@ -3785,7 +3786,7 @@ func TestLastSchedulingContext(t *testing.T) {
 		cqs                            []kueue.ClusterQueue
 		admittedWorkloads              []kueue.Workload
 		workloads                      []kueue.Workload
-		deleteWorkloads                []kueue.Workload
+		deleteWorkloads                []client.ObjectKey
 		wantPreempted                  sets.Set[workload.Reference]
 		wantAdmissionsOnFirstSchedule  map[workload.Reference]kueue.Admission
 		wantAdmissionsOnSecondSchedule map[workload.Reference]kueue.Admission
@@ -3825,14 +3826,10 @@ func TestLastSchedulingContext(t *testing.T) {
 					Request(corev1.ResourceCPU, "20").
 					Obj(),
 			},
-			deleteWorkloads: []kueue.Workload{
-				*utiltesting.MakeWorkload("low-1", "default").
-					Queue("main").
-					Request(corev1.ResourceCPU, "50").
-					ReserveQuota(utiltesting.MakeAdmission("eng-alpha").Assignment(corev1.ResourceCPU, "on-demand", "50").Obj()).
-					Admitted(true).
-					Obj(),
-			},
+			deleteWorkloads: []client.ObjectKey{{
+				Namespace: metav1.NamespaceDefault,
+				Name:      "low-1",
+			}},
 			wantPreempted:                 sets.Set[workload.Reference]{},
 			wantAdmissionsOnFirstSchedule: map[workload.Reference]kueue.Admission{},
 			wantAdmissionsOnSecondSchedule: map[workload.Reference]kueue.Admission{
@@ -3859,8 +3856,7 @@ func TestLastSchedulingContext(t *testing.T) {
 					Request(corev1.ResourceCPU, "20").
 					Obj(),
 			},
-			deleteWorkloads: []kueue.Workload{},
-			wantPreempted:   sets.Set[workload.Reference]{},
+			wantPreempted: sets.Set[workload.Reference]{},
 			wantAdmissionsOnFirstSchedule: map[workload.Reference]kueue.Admission{
 				"default/workload1": *utiltesting.MakeAdmission("eng-cohort-beta").Assignment(corev1.ResourceCPU, "on-demand", "20").Obj(),
 				"default/borrower":  *utiltesting.MakeAdmission("eng-cohort-alpha").Assignment(corev1.ResourceCPU, "on-demand", "20").Obj(),
@@ -3892,8 +3888,7 @@ func TestLastSchedulingContext(t *testing.T) {
 					Request(corev1.ResourceCPU, "20").
 					Obj(),
 			},
-			deleteWorkloads: []kueue.Workload{},
-			wantPreempted:   sets.Set[workload.Reference]{},
+			wantPreempted: sets.Set[workload.Reference]{},
 			wantAdmissionsOnFirstSchedule: map[workload.Reference]kueue.Admission{
 				"default/workload": *utiltesting.MakeAdmission("eng-cohort-theta").Assignment(corev1.ResourceCPU, "spot", "20").Obj(),
 			},
@@ -3929,8 +3924,7 @@ func TestLastSchedulingContext(t *testing.T) {
 					Request(corev1.ResourceCPU, "20").
 					Obj(),
 			},
-			deleteWorkloads: []kueue.Workload{},
-			wantPreempted:   sets.Set[workload.Reference]{},
+			wantPreempted: sets.Set[workload.Reference]{},
 			wantAdmissionsOnFirstSchedule: map[workload.Reference]kueue.Admission{
 				"default/workload": *utiltesting.MakeAdmission("eng-cohort-theta").Assignment(corev1.ResourceCPU, "on-demand", "20").Obj(),
 			},
@@ -3963,7 +3957,10 @@ func TestLastSchedulingContext(t *testing.T) {
 					Request(corev1.ResourceCPU, "20").
 					Obj(),
 			},
-			deleteWorkloads:               []kueue.Workload{*utiltesting.MakeWorkload("placeholder-alpha", "default").Obj()},
+			deleteWorkloads: []client.ObjectKey{{
+				Namespace: metav1.NamespaceDefault,
+				Name:      "placeholder-alpha",
+			}},
 			wantPreempted:                 sets.New[workload.Reference]("default/placeholder-alpha"),
 			wantAdmissionsOnFirstSchedule: map[workload.Reference]kueue.Admission{},
 			wantAdmissionsOnSecondSchedule: map[workload.Reference]kueue.Admission{
@@ -4046,8 +4043,11 @@ func TestLastSchedulingContext(t *testing.T) {
 					Request(corev1.ResourceCPU, "22").
 					Obj(),
 			},
-			deleteWorkloads: []kueue.Workload{*utiltesting.MakeWorkload("alpha2", "default").Obj()},
-			wantPreempted:   sets.New[workload.Reference]("default/alpha2"),
+			deleteWorkloads: []client.ObjectKey{{
+				Namespace: metav1.NamespaceDefault,
+				Name:      "alpha2",
+			}},
+			wantPreempted: sets.New[workload.Reference]("default/alpha2"),
 			wantAdmissionsOnSecondSchedule: map[workload.Reference]kueue.Admission{
 				"default/alpha1": *utiltesting.MakeAdmission("eng-cohort-alpha").Assignment(corev1.ResourceCPU, "on-demand", "22").Obj(),
 				"default/alpha3": *utiltesting.MakeAdmission("eng-cohort-alpha").Assignment(corev1.ResourceCPU, "spot", "22").Obj(),
@@ -4074,8 +4074,8 @@ func TestLastSchedulingContext(t *testing.T) {
 			broadcaster := record.NewBroadcaster()
 			recorder := broadcaster.NewRecorder(scheme,
 				corev1.EventSource{Component: constants.AdmissionName})
-			cqCache := cache.New(cl)
-			qManager := queue.NewManager(cl, cqCache)
+			cqCache := schdcache.New(cl)
+			qManager := qcache.NewManager(cl, cqCache)
 			// Workloads are loaded into queues or clusterQueues as we add them.
 			for _, q := range queues {
 				if err := qManager.AddLocalQueue(ctx, &q); err != nil {
@@ -4129,16 +4129,21 @@ func TestLastSchedulingContext(t *testing.T) {
 				t.Errorf("Unexpected scheduled workloads (-want,+got):\n%s", diff)
 			}
 
-			for _, wl := range tc.deleteWorkloads {
-				err := cl.Delete(ctx, &wl)
+			for _, workloadReference := range tc.deleteWorkloads {
+				var workload kueue.Workload
+				err := cl.Get(ctx, workloadReference, &workload)
+				if err != nil {
+					t.Errorf("Unable to get workload: %v", err)
+				}
+				err = cl.Delete(ctx, &workload)
 				if err != nil {
 					t.Errorf("Delete workload failed: %v", err)
 				}
-				err = cqCache.DeleteWorkload(log, &wl)
+				err = cqCache.DeleteWorkload(log, &workload)
 				if err != nil {
 					t.Errorf("Delete workload failed: %v", err)
 				}
-				qManager.QueueAssociatedInadmissibleWorkloadsAfter(ctx, &wl, nil)
+				qManager.QueueAssociatedInadmissibleWorkloadsAfter(ctx, &workload, nil)
 			}
 
 			scheduler.schedule(ctx)
@@ -4267,8 +4272,8 @@ func TestRequeueAndUpdate(t *testing.T) {
 			}).WithObjects(objs...).WithStatusSubresource(objs...).Build()
 			broadcaster := record.NewBroadcaster()
 			recorder := broadcaster.NewRecorder(scheme, corev1.EventSource{Component: constants.AdmissionName})
-			cqCache := cache.New(cl)
-			qManager := queue.NewManager(cl, cqCache)
+			cqCache := schdcache.New(cl)
+			qManager := qcache.NewManager(cl, cqCache)
 			scheduler := New(qManager, cqCache, cl, recorder)
 			if err := qManager.AddLocalQueue(ctx, q1); err != nil {
 				t.Fatalf("Inserting queue %s/%s in manager: %v", q1.Namespace, q1.Name, err)
@@ -4483,7 +4488,7 @@ func TestResourcesToReserve(t *testing.T) {
 			cl := utiltesting.NewClientBuilder().
 				WithLists(&kueue.ClusterQueueList{Items: []kueue.ClusterQueue{*cq}}).
 				Build()
-			cqCache := cache.New(cl)
+			cqCache := schdcache.New(cl)
 			for _, flavor := range resourceFlavors {
 				cqCache.AddOrUpdateResourceFlavor(log, flavor)
 			}
@@ -6480,10 +6485,10 @@ func TestScheduleForTAS(t *testing.T) {
 			_ = tasindexer.SetupIndexes(ctx, utiltesting.AsIndexer(clientBuilder))
 			cl := clientBuilder.Build()
 			recorder := &utiltesting.EventRecorder{}
-			cqCache := cache.New(cl)
+			cqCache := schdcache.New(cl)
 			now := time.Now()
 			fakeClock := testingclock.NewFakeClock(now)
-			qManager := queue.NewManager(cl, cqCache, queue.WithClock(fakeClock))
+			qManager := qcache.NewManager(cl, cqCache, qcache.WithClock(fakeClock))
 			topologyByName := slices.ToMap(tc.topologies, func(i int) (kueue.TopologyReference, kueuealpha.Topology) {
 				return kueue.TopologyReference(tc.topologies[i].Name), tc.topologies[i]
 			})
@@ -7019,8 +7024,8 @@ func TestScheduleForTASPreemption(t *testing.T) {
 			_ = tasindexer.SetupIndexes(ctx, utiltesting.AsIndexer(clientBuilder))
 			cl := clientBuilder.Build()
 			recorder := &utiltesting.EventRecorder{}
-			cqCache := cache.New(cl)
-			qManager := queue.NewManager(cl, cqCache)
+			cqCache := schdcache.New(cl)
+			qManager := qcache.NewManager(cl, cqCache)
 			topologyByName := slices.ToMap(tc.topologies, func(i int) (kueue.TopologyReference, kueuealpha.Topology) {
 				return kueue.TopologyReference(tc.topologies[i].Name), tc.topologies[i]
 			})
@@ -7957,8 +7962,8 @@ func TestScheduleForTASCohorts(t *testing.T) {
 			_ = tasindexer.SetupIndexes(ctx, utiltesting.AsIndexer(clientBuilder))
 			cl := clientBuilder.Build()
 			recorder := &utiltesting.EventRecorder{}
-			cqCache := cache.New(cl)
-			qManager := queue.NewManager(cl, cqCache)
+			cqCache := schdcache.New(cl)
+			qManager := qcache.NewManager(cl, cqCache)
 			topologyByName := slices.ToMap(tc.topologies, func(i int) (kueue.TopologyReference, kueuealpha.Topology) {
 				return kueue.TopologyReference(tc.topologies[i].Name), tc.topologies[i]
 			})
@@ -8283,8 +8288,8 @@ func TestScheduleForAFS(t *testing.T) {
 			fairSharing := &config.FairSharing{
 				Enable: tc.enableFairSharing,
 			}
-			cqCache := cache.New(cl, cache.WithFairSharing(fairSharing.Enable), cache.WithAdmissionFairSharing(afsConfig))
-			qManager := queue.NewManager(cl, cqCache, queue.WithAdmissionFairSharing(afsConfig))
+			cqCache := schdcache.New(cl, schdcache.WithFairSharing(fairSharing.Enable), schdcache.WithAdmissionFairSharing(afsConfig))
+			qManager := qcache.NewManager(cl, cqCache, qcache.WithAdmissionFairSharing(afsConfig))
 
 			ctx, log := utiltesting.ContextWithLog(t)
 			for _, q := range queues {

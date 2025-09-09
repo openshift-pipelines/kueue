@@ -1,0 +1,19 @@
+apiVersion: config.kueue.x-k8s.io/v1beta1
+kind: Configuration
+metadata:
+  name: kueue-manager-config
+  namespace: kueue-system
+data:
+  multikueue:
+    gcInterval: 1m
+    origin: "multikueue-manager"
+    workerLostTimeout: 15m
+    externalFrameworks:
+      # Example 1: Tekton PipelineRun
+      - name: "PipelineRun.v1.tekton.dev"
+      
+      # Example 2: Custom Job
+      - name: "CustomJob.v1alpha1.custom.example.com"
+      
+      # Example 3: Argo Workflow
+      - name: "Workflow.v1alpha1.argoproj.io"

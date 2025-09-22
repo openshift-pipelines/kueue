@@ -44,7 +44,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	configapi "sigs.k8s.io/kueue/apis/config/v1beta1"
-	kueuealpha "sigs.k8s.io/kueue/apis/kueue/v1alpha1"
 	kueue "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	qcache "sigs.k8s.io/kueue/pkg/cache/queue"
 	schdcache "sigs.k8s.io/kueue/pkg/cache/scheduler"
@@ -364,9 +363,9 @@ func (r *JobReconciler) ReconcileGenericJob(ctx context.Context, req ctrl.Reques
 				log.Error(err, "couldn't get an ancestor job workload")
 				return ctrl.Result{}, err
 			} else if ancestorWorkload == nil || !workload.IsAdmitted(ancestorWorkload) {
-				if err := clientutil.Patch(ctx, r.client, object, true, func() (bool, error) {
+				if err := clientutil.Patch(ctx, r.client, object, func() (client.Object, bool, error) {
 					job.Suspend()
-					return true, nil
+					return object, true, nil
 				}); err != nil {
 					log.Error(err, "suspending child job failed")
 					return ctrl.Result{}, err
@@ -1085,8 +1084,8 @@ func (r *JobReconciler) startJob(ctx context.Context, job GenericJob, object cli
 			return err
 		}
 	} else {
-		if err := clientutil.Patch(ctx, r.client, object, true, func() (bool, error) {
-			return true, job.RunWithPodSetsInfo(info)
+		if err := clientutil.Patch(ctx, r.client, object, func() (client.Object, bool, error) {
+			return object, true, job.RunWithPodSetsInfo(info)
 		}); err != nil {
 			return err
 		}
@@ -1129,12 +1128,12 @@ func (r *JobReconciler) stopJob(ctx context.Context, job GenericJob, wl *kueue.W
 		return nil
 	}
 
-	if err := clientutil.Patch(ctx, r.client, object, true, func() (bool, error) {
+	if err := clientutil.Patch(ctx, r.client, object, func() (client.Object, bool, error) {
 		job.Suspend()
 		if info != nil {
 			job.RestorePodSetsInfo(info)
 		}
-		return true, nil
+		return object, true, nil
 	}); err != nil {
 		return err
 	}
@@ -1288,12 +1287,12 @@ func getPodSetsInfoFromStatus(ctx context.Context, c client.Client, w *kueue.Wor
 	podSetsInfo := make([]podset.PodSetInfo, len(w.Status.Admission.PodSetAssignments))
 
 	for i, psAssignment := range w.Status.Admission.PodSetAssignments {
-		info, err := podset.FromAssignment(ctx, c, &psAssignment, w.Spec.PodSets[i].Count)
+		info, err := podset.FromAssignment(ctx, c, &psAssignment, &w.Spec.PodSets[i])
 		if err != nil {
 			return nil, err
 		}
 		if features.Enabled(features.TopologyAwareScheduling) {
-			info.Annotations[kueuealpha.WorkloadAnnotation] = w.Name
+			info.Annotations[kueue.WorkloadAnnotation] = w.Name
 		}
 
 		info.Labels[controllerconsts.PodSetLabel] = string(psAssignment.Name)

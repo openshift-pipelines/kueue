@@ -49,10 +49,12 @@ import (
 	workloadpytorchjob "sigs.k8s.io/kueue/pkg/controller/jobs/kubeflow/jobs/pytorchjob"
 	workloadtfjob "sigs.k8s.io/kueue/pkg/controller/jobs/kubeflow/jobs/tfjob"
 	workloadxgboostjob "sigs.k8s.io/kueue/pkg/controller/jobs/kubeflow/jobs/xgboostjob"
+	workloadtrainjob "sigs.k8s.io/kueue/pkg/controller/jobs/kubeflow/trainjob"
 	workloadmpijob "sigs.k8s.io/kueue/pkg/controller/jobs/mpijob"
 	workloadpod "sigs.k8s.io/kueue/pkg/controller/jobs/pod"
 	workloadraycluster "sigs.k8s.io/kueue/pkg/controller/jobs/raycluster"
 	workloadrayjob "sigs.k8s.io/kueue/pkg/controller/jobs/rayjob"
+	dispatcher "sigs.k8s.io/kueue/pkg/controller/workloaddispatcher"
 	"sigs.k8s.io/kueue/pkg/util/kubeversion"
 	utiltesting "sigs.k8s.io/kueue/pkg/util/testing"
 	"sigs.k8s.io/kueue/pkg/webhooks"
@@ -101,6 +103,7 @@ func createCluster(setupFnc framework.ManagerSetup, apiFeatureGates ...string) c
 			util.MpiOperatorCrds,
 			util.RayOperatorCrds,
 			util.AppWrapperCrds,
+			util.KfTrainerCrds,
 		},
 		APIServerFeatureGates: apiFeatureGates,
 	}
@@ -272,6 +275,18 @@ func managerSetup(ctx context.Context, mgr manager.Manager) {
 
 	err = workloadaw.SetupAppWrapperWebhook(mgr, jobframework.WithCache(cCache), jobframework.WithQueues(queues))
 	gomega.Expect(err).NotTo(gomega.HaveOccurred())
+
+	err = workloadtrainjob.SetupIndexes(ctx, mgr.GetFieldIndexer())
+	gomega.Expect(err).NotTo(gomega.HaveOccurred())
+
+	trainjobreconciler := workloadtrainjob.NewReconciler(
+		mgr.GetClient(),
+		mgr.GetEventRecorderFor(constants.JobControllerName))
+	err = trainjobreconciler.SetupWithManager(mgr)
+	gomega.Expect(err).NotTo(gomega.HaveOccurred())
+
+	err = workloadtrainjob.SetupTrainJobWebhook(mgr, jobframework.WithCache(cCache), jobframework.WithQueues(queues))
+	gomega.Expect(err).NotTo(gomega.HaveOccurred())
 }
 
 func managerAndMultiKueueSetup(
@@ -296,6 +311,11 @@ func managerAndMultiKueueSetup(
 		multikueue.WithAdapters(adapters),
 		multikueue.WithDispatcherName(dispatcherName),
 	)
+	gomega.Expect(err).NotTo(gomega.HaveOccurred())
+
+	configuration := &config.Configuration{}
+	mgr.GetScheme().Default(configuration)
+	_, err = dispatcher.SetupControllers(mgr, configuration, dispatcherName)
 	gomega.Expect(err).NotTo(gomega.HaveOccurred())
 }
 

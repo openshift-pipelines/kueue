@@ -955,14 +955,23 @@ a list of failed nodes:
 ```golang
 type WorkloadStatus struct {
   (...)
-	// nodeNamesToReplace, if specified, holds the names of failed nodes running at least one pod of this workload.
-	// This field is for internal use, is set by the node failure controler and should not be set by the users.
-	// It is used to signal kueue scheduler to search for replacement of the failed nodes (if the native kube
-	// scheduler cannot do it automatically). Requires enabling the TASFaliedNodReplacement feature gate.
-	//
-	// +optional
-	NodesToReplace []string `json:"nodesToReplace,omitempty"`
+    // unhealthyNodes holds the failed nodes running at least one pod of this workload
+    // when Topology-Aware Scheduling is used. This field should not be set by the users.
+    // It indicates Kueue's scheduler is searching for replacements of the failed nodes.
+    // Requires enabling the TASFailedNodeReplacement feature gate.
+    //
+    // +optional
+    UnhealthyNodes []UnhealthyNode `json:"unhealthyNodes,omitempty"`
 }
+
+type UnhealthyNode struct {
+    // name is the name of the unhealthy node.
+    //
+    // +required
+    // +kubebuilder:validation:Required
+    Name string `json:"name"`
+}
+
 ```
 
 Sometimes node failures are only transient and the node might recover, and so reacting
@@ -1295,11 +1304,8 @@ The new validations which are for MVP, but likely will be relaxed in the future:
   for node taints. Some options to consider include virtual level as proposed in
   the [issue](https://github.com/kubernetes-sigs/kueue/issues/3658#issuecomment-2505583333)
   or explicit level added by webhook.
-- introduce configuration for setting TAS profiles/algorithms
-- introduce a performance test for TAS [#4634](https://github.com/kubernetes-sigs/kueue/issues/4634)
 - re-evaluate the need for admin-facing configuration of the second phase
   requeuing for ProvisioningRequests based on user feedback
-- add observability metrics, some ideas are in the [discussion](https://github.com/kubernetes-sigs/kueue/pull/5078#discussion_r2060580973)
 - change how the information about the failed nodes is stored at a Workload from Annotation into a field in workload.Status
 - handle a more comprehensive set of failure scenarios (e.g., including node becoming unschedulable due to a taint)
 - re-evaluate replacing `NodeToReplace` annotation with a status field, to optimize number of requests in scheduler loop. [Discussion](https://github.com/kubernetes-sigs/kueue/issues/5560)
@@ -1316,6 +1322,10 @@ Consider the following improvements and implement if feasible:
 - perform full scheduling simulation rather than just capacity counting
  (including pod affinities and anti-affinities)
 - drop `TASLeastAllocated` feature gate
+- introduce configuration for setting TAS profiles/algorithms: https://github.com/kubernetes-sigs/kueue/issues/4570
+- introduce a performance test for TAS [#4634](https://github.com/kubernetes-sigs/kueue/issues/4634)
+- add observability metrics, some ideas are in the [discussion](https://github.com/kubernetes-sigs/kueue/pull/5078#discussion_r2060580973)
+- introduce configuration for the Node Hot Swap sub-feature: https://github.com/kubernetes-sigs/kueue/issues/6514
 
 ## Implementation History
 

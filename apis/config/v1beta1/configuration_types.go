@@ -279,6 +279,20 @@ type MultiKueue struct {
 	// - If not specified, the workload will be handled by the default ("kueue.x-k8s.io/multikueue-dispatcher-all-at-once") dispatcher.
 	// +optional
 	DispatcherName *string `json:"dispatcherName,omitempty"`
+
+	// ExternalFrameworks defines a list of external frameworks that should be supported
+	// by the generic MultiKueue adapter. Each entry defines how to handle a specific
+	// GroupVersionKind (GVK) for MultiKueue operations.
+	// +optional
+	ExternalFrameworks []MultiKueueExternalFramework `json:"externalFrameworks,omitempty"`
+}
+
+// MultiKueueExternalFramework defines a framework that is not built-in.
+type MultiKueueExternalFramework struct {
+	// Name is the GVK of the resource that are
+	// managed by external controllers
+	// the expected format is `Kind.version.group.com`.
+	Name string `json:"name"`
 }
 
 const (
@@ -387,6 +401,7 @@ type Integrations struct {
 	//  - "kubeflow.org/tfjob"
 	//  - "kubeflow.org/xgboostjob"
 	//  - "kubeflow.org/jaxjob"
+	//  - "trainer.kubeflow.org/trainjob"
 	//  - "workload.codeflare.dev/appwrapper"
 	//  - "pod"
 	//  - "deployment" (requires enabling pod integration)
@@ -449,6 +464,11 @@ type Resources struct {
 	// Transformations defines how to transform PodSpec resources into Workload resource requests.
 	// This is intended to be a map with Input as the key (enforced by validation code)
 	Transformations []ResourceTransformation `json:"transformations,omitempty"`
+
+	// DeviceClassMappings defines mappings from device classes to logical resources
+	// for Dynamic Resource Allocation support.
+	// +optional
+	DeviceClassMappings []DeviceClassMapping `json:"deviceClassMappings,omitempty"`
 }
 
 type ResourceTransformationStrategy string
@@ -467,6 +487,28 @@ type ResourceTransformation struct {
 	// Outputs specifies the output resources and quantities per unit of input resource.
 	// An empty Outputs combined with a `Replace` Strategy causes the Input resource to be ignored by Kueue.
 	Outputs corev1.ResourceList `json:"outputs,omitempty"`
+}
+
+// DeviceClassMapping holds device class to logical resource mappings
+// for Dynamic Resource Allocation support.
+type DeviceClassMapping struct {
+	// Name is referenced in ClusterQueue.nominalQuota and Workload status.
+	// Must be a valid fully qualified name consisting of an optional DNS subdomain prefix
+	// followed by a slash and a DNS label, or just a DNS label.
+	// DNS labels consist of lower-case alphanumeric characters or hyphens,
+	// and must start and end with an alphanumeric character.
+	// DNS subdomain prefixes follow the same rules as DNS labels but can contain periods.
+	// The total length must not exceed 253 characters.
+	Name corev1.ResourceName `json:"name"`
+
+	// DeviceClassNames enumerates the DeviceClasses represented by this resource name.
+	// Each device class name must be a valid qualified name consisting of an optional DNS subdomain prefix
+	// followed by a slash and a DNS label, or just a DNS label.
+	// DNS labels consist of lower-case alphanumeric characters or hyphens,
+	// and must start and end with an alphanumeric character.
+	// DNS subdomain prefixes follow the same rules as DNS labels but can contain periods.
+	// The total length of each name must not exceed 253 characters.
+	DeviceClassNames []corev1.ResourceName `json:"deviceClassNames"`
 }
 
 type PreemptionStrategy string

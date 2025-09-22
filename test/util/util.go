@@ -31,6 +31,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	kfmpi "github.com/kubeflow/mpi-operator/pkg/apis/kubeflow/v2beta1"
+	kftrainerapi "github.com/kubeflow/trainer/v2/pkg/apis/trainer/v1alpha1"
 	kftraining "github.com/kubeflow/training-operator/pkg/apis/kubeflow.org/v1"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
@@ -56,6 +57,7 @@ import (
 	"k8s.io/component-base/metrics/testutil"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/clock"
+	testingclock "k8s.io/utils/clock/testing"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -161,6 +163,10 @@ func DeleteAllJobsInNamespace(ctx context.Context, c client.Client, ns *corev1.N
 
 func DeleteAllJobSetsInNamespace(ctx context.Context, c client.Client, ns *corev1.Namespace) error {
 	return deleteAllObjectsInNamespace(ctx, c, ns, &jobset.JobSet{})
+}
+
+func DeleteAllTrainJobsInNamespace(ctx context.Context, c client.Client, ns *corev1.Namespace) error {
+	return deleteAllObjectsInNamespace(ctx, c, ns, &kftrainerapi.TrainJob{})
 }
 
 func DeleteAllLeaderWorkerSetsInNamespace(ctx context.Context, c client.Client, ns *corev1.Namespace) error {
@@ -562,13 +568,22 @@ func ExpectReservingActiveWorkloadsMetric(cq *kueue.ClusterQueue, value int) {
 	}, Timeout, Interval).Should(gomega.Succeed())
 }
 
-func ExpectAdmittedWorkloadsTotalMetric(cq *kueue.ClusterQueue, v int) {
-	metric := metrics.AdmittedWorkloadsTotal.WithLabelValues(cq.Name)
+func ExpectAdmittedWorkloadsTotalMetric(cq *kueue.ClusterQueue, workloadPriorityClass string, v int) {
+	metric := metrics.AdmittedWorkloadsTotal.WithLabelValues(cq.Name, workloadPriorityClass)
 	expectCounterMetric(metric, v)
 }
 
-func ExpectEvictedWorkloadsTotalMetric(cqName, reason, underlyingCause string, v int) {
-	metric := metrics.EvictedWorkloadsTotal.WithLabelValues(cqName, reason, underlyingCause)
+func ExpectAdmissionWaitTimeMetric(cq *kueue.ClusterQueue, workloadPriorityClass string, count int) {
+	gomega.EventuallyWithOffset(1, func(g gomega.Gomega) {
+		metric := metrics.AdmissionWaitTime.WithLabelValues(cq.Name, workloadPriorityClass)
+		v, err := testutil.GetHistogramMetricCount(metric)
+		g.Expect(err).ToNot(gomega.HaveOccurred())
+		g.Expect(int(v)).Should(gomega.Equal(count))
+	}, Timeout, Interval).Should(gomega.Succeed())
+}
+
+func ExpectEvictedWorkloadsTotalMetric(cqName, reason, underlyingCause, workloadPriorityClass string, v int) {
+	metric := metrics.EvictedWorkloadsTotal.WithLabelValues(cqName, reason, underlyingCause, workloadPriorityClass)
 	expectCounterMetric(metric, v)
 }
 
@@ -577,8 +592,8 @@ func ExpectPodsReadyToEvictedTimeSeconds(cqName, reason, underlyingCause string,
 	expectHistogramMetric(metric, cqName, reason, underlyingCause, v)
 }
 
-func ExpectEvictedWorkloadsOnceTotalMetric(cqName string, reason, underlyingCause string, v int) {
-	metric := metrics.EvictedWorkloadsOnceTotal.WithLabelValues(cqName, reason, underlyingCause)
+func ExpectEvictedWorkloadsOnceTotalMetric(cqName string, reason, underlyingCause, workloadPriorityClass string, v int) {
+	metric := metrics.EvictedWorkloadsOnceTotal.WithLabelValues(cqName, reason, underlyingCause, workloadPriorityClass)
 	expectCounterMetric(metric, v)
 }
 
@@ -587,9 +602,18 @@ func ExpectPreemptedWorkloadsTotalMetric(preemptorCqName, reason string, v int) 
 	expectCounterMetric(metric, v)
 }
 
-func ExpectQuotaReservedWorkloadsTotalMetric(cq *kueue.ClusterQueue, v int) {
-	metric := metrics.QuotaReservedWorkloadsTotal.WithLabelValues(cq.Name)
+func ExpectQuotaReservedWorkloadsTotalMetric(cq *kueue.ClusterQueue, workloadPriorityClass string, v int) {
+	metric := metrics.QuotaReservedWorkloadsTotal.WithLabelValues(cq.Name, workloadPriorityClass)
 	expectCounterMetric(metric, v)
+}
+
+func ExpectQuotaReservedWaitTimeMetric(cq *kueue.ClusterQueue, workloadPriorityClass string, count int) {
+	gomega.EventuallyWithOffset(1, func(g gomega.Gomega) {
+		metric := metrics.QuotaReservedWaitTime.WithLabelValues(cq.Name, workloadPriorityClass)
+		v, err := testutil.GetHistogramMetricCount(metric)
+		g.Expect(err).ToNot(gomega.HaveOccurred())
+		g.Expect(int(v)).Should(gomega.Equal(count))
+	}, Timeout, Interval).Should(gomega.Succeed())
 }
 
 func expectCounterMetric(metric prometheus.Counter, count int) {
@@ -677,14 +701,18 @@ func ExpectCQResourceReservations(cq *kueue.ClusterQueue, flavor, resource strin
 	}, Timeout, Interval).Should(gomega.Succeed())
 }
 
-func SetQuotaReservation(ctx context.Context, k8sClient client.Client, wl *kueue.Workload, admission *kueue.Admission) error {
-	wl = wl.DeepCopy()
-	if admission == nil {
-		workload.UnsetQuotaReservationWithCondition(wl, "EvictedByTest", "Evicted By Test", time.Now())
-	} else {
-		workload.SetQuotaReservation(wl, admission, clock.RealClock{})
-	}
-	return workload.ApplyAdmissionStatus(ctx, k8sClient, wl, false, clock.RealClock{})
+func SetQuotaReservation(ctx context.Context, k8sClient client.Client, wlKey client.ObjectKey, admission *kueue.Admission) {
+	clk := testingclock.NewFakeClock(time.Now())
+	gomega.EventuallyWithOffset(1, func(g gomega.Gomega) {
+		updatedWl := &kueue.Workload{}
+		g.ExpectWithOffset(1, k8sClient.Get(ctx, wlKey, updatedWl)).To(gomega.Succeed())
+		if admission == nil {
+			workload.UnsetQuotaReservationWithCondition(updatedWl, "EvictedByTest", "Evicted By Test", clk.Now())
+		} else {
+			workload.SetQuotaReservation(updatedWl, admission, clk)
+		}
+		g.ExpectWithOffset(1, workload.ApplyAdmissionStatus(ctx, k8sClient, updatedWl, false, clk)).To(gomega.Succeed())
+	}, Timeout, Interval).Should(gomega.Succeed())
 }
 
 // SyncAdmittedConditionForWorkloads sets the Admission condition of the provided workloads based on

@@ -37,7 +37,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
-	kueuealpha "sigs.k8s.io/kueue/apis/kueue/v1alpha1"
 	kueue "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	"sigs.k8s.io/kueue/pkg/cache/hierarchy"
 	"sigs.k8s.io/kueue/pkg/features"
@@ -425,8 +424,9 @@ func TestCacheClusterQueueOperations(t *testing.T) {
 				wl := utiltesting.MakeWorkload("one", "").
 					Request(corev1.ResourceCPU, "5").
 					ReserveQuota(utiltesting.MakeAdmission("a").
-						Assignment(corev1.ResourceCPU, "default", "5000m").
-						Obj()).
+						PodSets(utiltesting.MakePodSetAssignment(kueue.DefaultPodSetName).
+							Assignment(corev1.ResourceCPU, "default", "5000m").
+							Obj()).Obj()).
 					Condition(metav1.Condition{Type: kueue.WorkloadAdmitted, Status: metav1.ConditionTrue}).
 					Obj()
 
@@ -466,8 +466,9 @@ func TestCacheClusterQueueOperations(t *testing.T) {
 							Obj: utiltesting.MakeWorkload("one", "").
 								Request(corev1.ResourceCPU, "5").
 								ReserveQuota(utiltesting.MakeAdmission("a").
-									Assignment(corev1.ResourceCPU, "default", "5000m").
-									Obj()).
+									PodSets(utiltesting.MakePodSetAssignment(kueue.DefaultPodSetName).
+										Assignment(corev1.ResourceCPU, "default", "5000m").
+										Obj()).Obj()).
 								Condition(metav1.Condition{Type: kueue.WorkloadAdmitted, Status: metav1.ConditionTrue}).
 								Obj(),
 							TotalRequests: []workload.PodSetResources{
@@ -854,13 +855,25 @@ func TestCacheClusterQueueOperations(t *testing.T) {
 				utiltesting.MakeLocalQueue("lq1", "ns").ClusterQueue("cq1").Obj(),
 				utiltesting.MakeWorkload("pending", "ns").Obj(),
 				utiltesting.MakeWorkload("reserving", "ns").ReserveQuota(
-					utiltesting.MakeAdmission("cq1").Assignment(corev1.ResourceCPU, "f1", "1").Obj(),
+					utiltesting.MakeAdmission("cq1").
+						PodSets(utiltesting.MakePodSetAssignment(kueue.DefaultPodSetName).
+							Assignment(corev1.ResourceCPU, "f1", "1").
+							Obj()).
+						Obj(),
 				).Obj(),
 				utiltesting.MakeWorkload("admitted", "ns").ReserveQuota(
-					utiltesting.MakeAdmission("cq1").Assignment(corev1.ResourceCPU, "f1", "1").Obj(),
+					utiltesting.MakeAdmission("cq1").
+						PodSets(utiltesting.MakePodSetAssignment(kueue.DefaultPodSetName).
+							Assignment(corev1.ResourceCPU, "f1", "1").
+							Obj()).
+						Obj(),
 				).Admitted(true).Obj(),
 				utiltesting.MakeWorkload("finished", "ns").ReserveQuota(
-					utiltesting.MakeAdmission("cq1").Assignment(corev1.ResourceCPU, "f1", "1").Obj(),
+					utiltesting.MakeAdmission("cq1").
+						PodSets(utiltesting.MakePodSetAssignment(kueue.DefaultPodSetName).
+							Assignment(corev1.ResourceCPU, "f1", "1").
+							Obj()).
+						Obj(),
 				).Admitted(true).Finished().Obj(),
 			},
 			operation: func(log logr.Logger, cache *Cache) error {
@@ -1741,13 +1754,23 @@ func TestClusterQueueUsage(t *testing.T) {
 		*utiltesting.MakeWorkload("one", "").
 			Request(corev1.ResourceCPU, "8").
 			Request("example.com/gpu", "5").
-			ReserveQuota(utiltesting.MakeAdmission("foo").Assignment(corev1.ResourceCPU, "default", "8000m").Assignment("example.com/gpu", "model_a", "5").Obj()).
+			ReserveQuota(utiltesting.MakeAdmission("foo").
+				PodSets(utiltesting.MakePodSetAssignment(kueue.DefaultPodSetName).
+					Assignment(corev1.ResourceCPU, "default", "8000m").
+					Assignment("example.com/gpu", "model_a", "5").
+					Obj()).
+				Obj()).
 			Condition(metav1.Condition{Type: kueue.WorkloadAdmitted, Status: metav1.ConditionTrue}).
 			Obj(),
 		*utiltesting.MakeWorkload("two", "").
 			Request(corev1.ResourceCPU, "5").
 			Request("example.com/gpu", "6").
-			ReserveQuota(utiltesting.MakeAdmission("foo").Assignment(corev1.ResourceCPU, "default", "5000m").Assignment("example.com/gpu", "model_b", "6").Obj()).
+			ReserveQuota(utiltesting.MakeAdmission("foo").
+				PodSets(utiltesting.MakePodSetAssignment(kueue.DefaultPodSetName).
+					Assignment(corev1.ResourceCPU, "default", "5000m").
+					Assignment("example.com/gpu", "model_b", "6").
+					Obj()).
+				Obj()).
 			Obj(),
 	}
 	cases := map[string]struct {
@@ -1967,12 +1990,12 @@ func TestClusterQueueUsage(t *testing.T) {
 			workloads: []kueue.Workload{
 				*utiltesting.MakeWorkload("partial-one", "").
 					PodSets(*utiltesting.MakePodSet(kueue.DefaultPodSetName, 5).Request(corev1.ResourceCPU, "2").Obj()).
-					ReserveQuota(utiltesting.MakeAdmission("foo").Assignment(corev1.ResourceCPU, "default", "4000m").AssignmentPodCount(2).Obj()).
+					ReserveQuota(utiltesting.MakeAdmission("foo").PodSets(utiltesting.MakePodSetAssignment(kueue.DefaultPodSetName).Assignment(corev1.ResourceCPU, "default", "4000m").Count(2).Obj()).Obj()).
 					Admitted(true).
 					Obj(),
 				*utiltesting.MakeWorkload("partial-two", "").
 					PodSets(*utiltesting.MakePodSet(kueue.DefaultPodSetName, 5).Request(corev1.ResourceCPU, "2").Obj()).
-					ReserveQuota(utiltesting.MakeAdmission("foo").Assignment(corev1.ResourceCPU, "default", "4000m").AssignmentPodCount(2).Obj()).
+					ReserveQuota(utiltesting.MakeAdmission("foo").PodSets(utiltesting.MakePodSetAssignment(kueue.DefaultPodSetName).Assignment(corev1.ResourceCPU, "default", "4000m").Count(2).Obj()).Obj()).
 					Obj(),
 			},
 			wantReservedResources: []kueue.FlavorUsage{
@@ -2158,8 +2181,9 @@ func TestLocalQueueUsage(t *testing.T) {
 					Request("example.com/gpu", "5").
 					ReserveQuota(
 						utiltesting.MakeAdmission("foo").
-							Assignment(corev1.ResourceCPU, "default", "5000m").
-							Assignment("example.com/gpu", "model-a", "5").Obj(),
+							PodSets(utiltesting.MakePodSetAssignment(kueue.DefaultPodSetName).
+								Assignment(corev1.ResourceCPU, "default", "5000m").
+								Assignment("example.com/gpu", "model-a", "5").Obj()).Obj(),
 					).
 					Obj(),
 				*utiltesting.MakeWorkload("two", "ns1").
@@ -2168,8 +2192,9 @@ func TestLocalQueueUsage(t *testing.T) {
 					Request("example.com/gpu", "3").
 					ReserveQuota(
 						utiltesting.MakeAdmission("foo").
-							Assignment(corev1.ResourceCPU, "default", "3000m").
-							Assignment("example.com/gpu", "model-b", "3").Obj(),
+							PodSets(utiltesting.MakePodSetAssignment(kueue.DefaultPodSetName).
+								Assignment(corev1.ResourceCPU, "default", "3000m").
+								Assignment("example.com/gpu", "model-b", "3").Obj()).Obj(),
 					).
 					Obj(),
 			},
@@ -2220,8 +2245,9 @@ func TestLocalQueueUsage(t *testing.T) {
 					Request("example.com/gpu", "5").
 					ReserveQuota(
 						utiltesting.MakeAdmission("foo").
-							Assignment(corev1.ResourceCPU, "default", "5000m").
-							Assignment("example.com/gpu", "model-a", "5").Obj(),
+							PodSets(utiltesting.MakePodSetAssignment(kueue.DefaultPodSetName).
+								Assignment(corev1.ResourceCPU, "default", "5000m").
+								Assignment("example.com/gpu", "model-a", "5").Obj()).Obj(),
 					).Obj(),
 				*utiltesting.MakeWorkload("two", "ns1").
 					Queue("test").
@@ -2386,8 +2412,9 @@ func TestCacheQueueOperations(t *testing.T) {
 			Request("memory", "8Gi").
 			ReserveQuota(
 				utiltesting.MakeAdmission("foo").
-					Assignment("cpu", "spot", "2").
-					Assignment("memory", "spot", "8Gi").Obj(),
+					PodSets(utiltesting.MakePodSetAssignment(kueue.DefaultPodSetName).
+						Assignment("cpu", "spot", "2").
+						Assignment("memory", "spot", "8Gi").Obj()).Obj(),
 			).
 			Condition(metav1.Condition{Type: kueue.WorkloadAdmitted, Status: metav1.ConditionTrue}).
 			Obj(),
@@ -2396,7 +2423,8 @@ func TestCacheQueueOperations(t *testing.T) {
 			Request("example.com/gpu", "2").
 			ReserveQuota(
 				utiltesting.MakeAdmission("foo").
-					Assignment("example.com/gpu", "model-a", "2").Obj(),
+					PodSets(utiltesting.MakePodSetAssignment(kueue.DefaultPodSetName).
+						Assignment("example.com/gpu", "model-a", "2").Obj()).Obj(),
 			).
 			Condition(metav1.Condition{Type: kueue.WorkloadAdmitted, Status: metav1.ConditionTrue}).
 			Obj(),
@@ -2406,15 +2434,17 @@ func TestCacheQueueOperations(t *testing.T) {
 			Request("memory", "16Gi").
 			ReserveQuota(
 				utiltesting.MakeAdmission("bar").
-					Assignment("cpu", "ondemand", "5").
-					Assignment("memory", "ondemand", "16Gi").Obj(),
+					PodSets(utiltesting.MakePodSetAssignment(kueue.DefaultPodSetName).
+						Assignment("cpu", "ondemand", "5").
+						Assignment("memory", "ondemand", "16Gi").Obj()).Obj(),
 			).Obj(),
 		utiltesting.MakeWorkload("job4", "ns2").
 			Queue("beta").
 			Request("example.com/gpu", "5").
 			ReserveQuota(
 				utiltesting.MakeAdmission("foo").
-					Assignment("example.com/gpu", "model-a", "5").Obj(),
+					PodSets(utiltesting.MakePodSetAssignment(kueue.DefaultPodSetName).
+						Assignment("example.com/gpu", "model-a", "5").Obj()).Obj(),
 			).Obj(),
 	}
 	insertAllClusterQueues := func(ctx context.Context, cl client.Client, cache *Cache) error {
@@ -3897,12 +3927,12 @@ func TestSnapshotError(t *testing.T) {
 	cache := New(client)
 	cache.AddOrUpdateResourceFlavor(log, &flavor)
 	if flavor.Spec.TopologyName != nil {
-		cache.AddOrUpdateTopology(log, &kueuealpha.Topology{
+		cache.AddOrUpdateTopology(log, &kueue.Topology{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: string(*flavor.Spec.TopologyName),
 			},
-			Spec: kueuealpha.TopologySpec{
-				Levels: []kueuealpha.TopologyLevel{
+			Spec: kueue.TopologySpec{
+				Levels: []kueue.TopologyLevel{
 					{
 						NodeLabel: corev1.LabelHostname,
 					},

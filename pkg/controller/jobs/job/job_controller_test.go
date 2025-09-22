@@ -37,7 +37,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	configapi "sigs.k8s.io/kueue/apis/config/v1beta1"
-	kueuealpha "sigs.k8s.io/kueue/apis/kueue/v1alpha1"
 	kueue "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	"sigs.k8s.io/kueue/pkg/constants"
 	controllerconsts "sigs.k8s.io/kueue/pkg/controller/constants"
@@ -363,13 +362,13 @@ func TestPodSets(t *testing.T) {
 			job: (*Job)(
 				jobTemplate.Clone().
 					Parallelism(3).
-					PodAnnotation(kueuealpha.PodSetRequiredTopologyAnnotation, "cloud.com/block").
+					PodAnnotation(kueue.PodSetRequiredTopologyAnnotation, "cloud.com/block").
 					Obj(),
 			),
 			wantPodSets: []kueue.PodSet{
 				*utiltesting.MakePodSet(kueue.DefaultPodSetName, 3).
 					PodSpec(jobTemplate.Clone().Spec.Template.Spec).
-					Annotations(map[string]string{kueuealpha.PodSetRequiredTopologyAnnotation: "cloud.com/block"}).
+					Annotations(map[string]string{kueue.PodSetRequiredTopologyAnnotation: "cloud.com/block"}).
 					RequiredTopologyRequest("cloud.com/block").
 					PodIndexLabel(ptr.To(batchv1.JobCompletionIndexAnnotation)).
 					Obj(),
@@ -380,13 +379,13 @@ func TestPodSets(t *testing.T) {
 			job: (*Job)(
 				jobTemplate.Clone().
 					Parallelism(3).
-					PodAnnotation(kueuealpha.PodSetPreferredTopologyAnnotation, "cloud.com/block").
+					PodAnnotation(kueue.PodSetPreferredTopologyAnnotation, "cloud.com/block").
 					Obj(),
 			),
 			wantPodSets: []kueue.PodSet{
 				*utiltesting.MakePodSet(kueue.DefaultPodSetName, 3).
 					PodSpec(jobTemplate.Clone().Spec.Template.Spec).
-					Annotations(map[string]string{kueuealpha.PodSetPreferredTopologyAnnotation: "cloud.com/block"}).
+					Annotations(map[string]string{kueue.PodSetPreferredTopologyAnnotation: "cloud.com/block"}).
 					PreferredTopologyRequest("cloud.com/block").
 					PodIndexLabel(ptr.To(batchv1.JobCompletionIndexAnnotation)).
 					Obj(),
@@ -397,16 +396,16 @@ func TestPodSets(t *testing.T) {
 			job: (*Job)(
 				jobTemplate.Clone().
 					Parallelism(3).
-					PodAnnotation(kueuealpha.PodSetSliceRequiredTopologyAnnotation, "cloud.com/block").
-					PodAnnotation(kueuealpha.PodSetSliceSizeAnnotation, "1").
+					PodAnnotation(kueue.PodSetSliceRequiredTopologyAnnotation, "cloud.com/block").
+					PodAnnotation(kueue.PodSetSliceSizeAnnotation, "1").
 					Obj(),
 			),
 			wantPodSets: []kueue.PodSet{
 				*utiltesting.MakePodSet(kueue.DefaultPodSetName, 3).
 					PodSpec(jobTemplate.Clone().Spec.Template.Spec).
 					Annotations(map[string]string{
-						kueuealpha.PodSetSliceRequiredTopologyAnnotation: "cloud.com/block",
-						kueuealpha.PodSetSliceSizeAnnotation:             "1",
+						kueue.PodSetSliceRequiredTopologyAnnotation: "cloud.com/block",
+						kueue.PodSetSliceSizeAnnotation:             "1",
 					}).
 					PodIndexLabel(ptr.To(batchv1.JobCompletionIndexAnnotation)).
 					SliceRequiredTopologyRequest("cloud.com/block").
@@ -419,16 +418,16 @@ func TestPodSets(t *testing.T) {
 			job: (*Job)(
 				jobTemplate.Clone().
 					Parallelism(3).
-					PodAnnotation(kueuealpha.PodSetSliceRequiredTopologyAnnotation, "cloud.com/block").
-					PodAnnotation(kueuealpha.PodSetSliceSizeAnnotation, "1").
+					PodAnnotation(kueue.PodSetSliceRequiredTopologyAnnotation, "cloud.com/block").
+					PodAnnotation(kueue.PodSetSliceSizeAnnotation, "1").
 					Obj(),
 			),
 			wantPodSets: []kueue.PodSet{
 				*utiltesting.MakePodSet(kueue.DefaultPodSetName, 3).
 					PodSpec(jobTemplate.Clone().Spec.Template.Spec).
 					Annotations(map[string]string{
-						kueuealpha.PodSetSliceRequiredTopologyAnnotation: "cloud.com/block",
-						kueuealpha.PodSetSliceSizeAnnotation:             "1",
+						kueue.PodSetSliceRequiredTopologyAnnotation: "cloud.com/block",
+						kueue.PodSetSliceSizeAnnotation:             "1",
 					}).
 					Obj(),
 			},
@@ -438,14 +437,14 @@ func TestPodSets(t *testing.T) {
 			job: (*Job)(
 				jobTemplate.Clone().
 					Parallelism(3).
-					PodAnnotation(kueuealpha.PodSetSliceRequiredTopologyAnnotation, "cloud.com/block").
+					PodAnnotation(kueue.PodSetSliceRequiredTopologyAnnotation, "cloud.com/block").
 					Obj(),
 			),
 			wantPodSets: []kueue.PodSet{
 				*utiltesting.MakePodSet(kueue.DefaultPodSetName, 3).
 					PodSpec(jobTemplate.Clone().Spec.Template.Spec).
 					Annotations(map[string]string{
-						kueuealpha.PodSetSliceRequiredTopologyAnnotation: "cloud.com/block",
+						kueue.PodSetSliceRequiredTopologyAnnotation: "cloud.com/block",
 					}).
 					PodIndexLabel(ptr.To(batchv1.JobCompletionIndexAnnotation)).
 					Obj(),
@@ -456,14 +455,14 @@ func TestPodSets(t *testing.T) {
 			job: (*Job)(
 				jobTemplate.Clone().
 					Parallelism(3).
-					PodAnnotation(kueuealpha.PodSetSliceSizeAnnotation, "1").
+					PodAnnotation(kueue.PodSetSliceSizeAnnotation, "1").
 					Obj(),
 			),
 			wantPodSets: []kueue.PodSet{
 				*utiltesting.MakePodSet(kueue.DefaultPodSetName, 3).
 					PodSpec(jobTemplate.Clone().Spec.Template.Spec).
 					Annotations(map[string]string{
-						kueuealpha.PodSetSliceSizeAnnotation: "1",
+						kueue.PodSetSliceSizeAnnotation: "1",
 					}).
 					PodIndexLabel(ptr.To(batchv1.JobCompletionIndexAnnotation)).
 					Obj(),
@@ -474,13 +473,13 @@ func TestPodSets(t *testing.T) {
 			job: (*Job)(
 				jobTemplate.Clone().
 					Parallelism(3).
-					PodAnnotation(kueuealpha.PodSetPreferredTopologyAnnotation, "cloud.com/block").
+					PodAnnotation(kueue.PodSetPreferredTopologyAnnotation, "cloud.com/block").
 					Obj(),
 			),
 			wantPodSets: []kueue.PodSet{
 				*utiltesting.MakePodSet(kueue.DefaultPodSetName, 3).
 					PodSpec(jobTemplate.Clone().Spec.Template.Spec).
-					Annotations(map[string]string{kueuealpha.PodSetPreferredTopologyAnnotation: "cloud.com/block"}).
+					Annotations(map[string]string{kueue.PodSetPreferredTopologyAnnotation: "cloud.com/block"}).
 					Obj(),
 			},
 			enableTopologyAwareScheduling: false,
@@ -489,13 +488,13 @@ func TestPodSets(t *testing.T) {
 			job: (*Job)(
 				jobTemplate.Clone().
 					Parallelism(3).
-					PodAnnotation(kueuealpha.PodSetRequiredTopologyAnnotation, "cloud.com/block").
+					PodAnnotation(kueue.PodSetRequiredTopologyAnnotation, "cloud.com/block").
 					Obj(),
 			),
 			wantPodSets: []kueue.PodSet{
 				*utiltesting.MakePodSet(kueue.DefaultPodSetName, 3).
 					PodSpec(jobTemplate.Clone().Spec.Template.Spec).
-					Annotations(map[string]string{kueuealpha.PodSetRequiredTopologyAnnotation: "cloud.com/block"}).
+					Annotations(map[string]string{kueue.PodSetRequiredTopologyAnnotation: "cloud.com/block"}).
 					Obj(),
 			},
 			enableTopologyAwareScheduling: false,
@@ -568,7 +567,7 @@ func TestReconciler(t *testing.T) {
 	baseWorkloadWrapper := utiltesting.MakeWorkload("wl", "ns").
 		Finalizers(kueue.ResourceInUseFinalizerName).
 		PodSets(*utiltesting.MakePodSet(kueue.DefaultPodSetName, 10).Request(corev1.ResourceCPU, "1").Obj()).
-		ReserveQuota(utiltesting.MakeAdmission("cq").AssignmentPodCount(10).Obj())
+		ReserveQuota(utiltesting.MakeAdmission("cq").PodSets(utiltesting.MakePodSetAssignment(kueue.DefaultPodSetName).Count(10).Obj()).Obj())
 
 	baseWPCWrapper := utiltesting.MakeWorkloadPriorityClass("test-wpc").
 		PriorityValue(100)
@@ -925,7 +924,7 @@ func TestReconciler(t *testing.T) {
 			wantJob: *baseJobWrapper.Clone().
 				Suspend(false).
 				PodLabel(controllerconsts.PodSetLabel, string(kueue.DefaultPodSetName)).
-				PodAnnotation(kueuealpha.WorkloadAnnotation, "wl").
+				PodAnnotation(kueue.WorkloadAnnotation, "wl").
 				Obj(),
 			workloads: []kueue.Workload{
 				*baseWorkloadWrapper.Clone().
@@ -2524,7 +2523,7 @@ func TestReconciler(t *testing.T) {
 				*utiltesting.MakeWorkload("a", "ns").
 					Finalizers(kueue.ResourceInUseFinalizerName).
 					PodSets(*utiltesting.MakePodSet(kueue.DefaultPodSetName, 10).SetMinimumCount(5).Request(corev1.ResourceCPU, "1").Obj()).
-					ReserveQuota(utiltesting.MakeAdmission("cq").AssignmentPodCount(8).Obj()).
+					ReserveQuota(utiltesting.MakeAdmission("cq").PodSets(utiltesting.MakePodSetAssignment(kueue.DefaultPodSetName).Count(8).Obj()).Obj()).
 					Admitted(true).
 					Obj(),
 			},
@@ -2537,7 +2536,7 @@ func TestReconciler(t *testing.T) {
 							Request(corev1.ResourceCPU, "1").
 							Obj(),
 					).
-					ReserveQuota(utiltesting.MakeAdmission("cq").AssignmentPodCount(8).Obj()).
+					ReserveQuota(utiltesting.MakeAdmission("cq").PodSets(utiltesting.MakePodSetAssignment(kueue.DefaultPodSetName).Count(8).Obj()).Obj()).
 					Admitted(true).
 					Obj(),
 			},
@@ -2571,7 +2570,7 @@ func TestReconciler(t *testing.T) {
 							Request(corev1.ResourceCPU, "1").
 							Obj(),
 					).
-					ReserveQuota(utiltesting.MakeAdmission("cq").AssignmentPodCount(8).Obj()).
+					ReserveQuota(utiltesting.MakeAdmission("cq").PodSets(utiltesting.MakePodSetAssignment(kueue.DefaultPodSetName).Count(8).Obj()).Obj()).
 					Admitted(true).
 					Obj(),
 			},
@@ -2807,7 +2806,7 @@ func TestReconciler(t *testing.T) {
 			workloads: []kueue.Workload{
 				*utiltesting.MakeWorkload("unit-test", "ns").
 					PodSets(*utiltesting.MakePodSet(kueue.DefaultPodSetName, 10).SetMinimumCount(5).Request(corev1.ResourceCPU, "1").Obj()).
-					ReserveQuota(utiltesting.MakeAdmission("cq").AssignmentPodCount(10).Obj()).
+					ReserveQuota(utiltesting.MakeAdmission("cq").PodSets(utiltesting.MakePodSetAssignment(kueue.DefaultPodSetName).Count(10).Obj()).Obj()).
 					Admitted(true).
 					ControllerReference(batchv1.SchemeGroupVersion.WithKind("Job"), "parent", "parent-uid").
 					Obj(),
@@ -2815,7 +2814,7 @@ func TestReconciler(t *testing.T) {
 			wantWorkloads: []kueue.Workload{
 				*utiltesting.MakeWorkload("unit-test", "ns").
 					PodSets(*utiltesting.MakePodSet(kueue.DefaultPodSetName, 10).SetMinimumCount(5).Request(corev1.ResourceCPU, "1").Obj()).
-					ReserveQuota(utiltesting.MakeAdmission("cq").AssignmentPodCount(10).Obj()).
+					ReserveQuota(utiltesting.MakeAdmission("cq").PodSets(utiltesting.MakePodSetAssignment(kueue.DefaultPodSetName).Count(10).Obj()).Obj()).
 					Admitted(true).
 					ControllerReference(batchv1.SchemeGroupVersion.WithKind("Job"), "parent", "parent-uid").
 					Obj(),
@@ -2887,7 +2886,7 @@ func TestReconciler(t *testing.T) {
 				*utiltesting.MakeWorkload("parent-workload", "ns").
 					Finalizers(kueue.ResourceInUseFinalizerName).
 					PodSets(*utiltesting.MakePodSet(kueue.DefaultPodSetName, 10).SetMinimumCount(5).Request(corev1.ResourceCPU, "1").Obj()).
-					ReserveQuota(utiltesting.MakeAdmission("cq").AssignmentPodCount(10).Obj()).
+					ReserveQuota(utiltesting.MakeAdmission("cq").PodSets(utiltesting.MakePodSetAssignment(kueue.DefaultPodSetName).Count(10).Obj()).Obj()).
 					ControllerReference(batchv1.SchemeGroupVersion.WithKind("Job"), "parent", "parent-uid").
 					Admitted(true).
 					Obj(),
@@ -2896,7 +2895,7 @@ func TestReconciler(t *testing.T) {
 				*utiltesting.MakeWorkload("parent-workload", "ns").
 					Finalizers(kueue.ResourceInUseFinalizerName).
 					PodSets(*utiltesting.MakePodSet(kueue.DefaultPodSetName, 10).SetMinimumCount(5).Request(corev1.ResourceCPU, "1").Obj()).
-					ReserveQuota(utiltesting.MakeAdmission("cq").AssignmentPodCount(10).Obj()).
+					ReserveQuota(utiltesting.MakeAdmission("cq").PodSets(utiltesting.MakePodSetAssignment(kueue.DefaultPodSetName).Count(10).Obj()).Obj()).
 					ControllerReference(batchv1.SchemeGroupVersion.WithKind("Job"), "parent", "parent-uid").
 					Admitted(true).
 					Obj(),

@@ -45,8 +45,10 @@ import (
 	config "sigs.k8s.io/kueue/apis/config/v1beta1"
 	kueue "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	"sigs.k8s.io/kueue/pkg/controller/jobframework"
+	"sigs.k8s.io/kueue/pkg/features"
 	"sigs.k8s.io/kueue/pkg/util/admissioncheck"
 	"sigs.k8s.io/kueue/pkg/util/api"
+	clientutil "sigs.k8s.io/kueue/pkg/util/client"
 	utilmaps "sigs.k8s.io/kueue/pkg/util/maps"
 	"sigs.k8s.io/kueue/pkg/workload"
 )
@@ -340,13 +342,22 @@ func (w *wlReconciler) reconcileGroup(ctx context.Context, group *wlGroup) (reco
 		}
 
 		// copy the status to the local one
+		finishCond := metav1.Condition{
+			Type:               kueue.WorkloadFinished,
+			Status:             metav1.ConditionTrue,
+			Reason:             remoteFinishedCond.Reason,
+			Message:            remoteFinishedCond.Message,
+			LastTransitionTime: metav1.NewTime(w.clock.Now()),
+		}
+		if features.Enabled(features.WorkloadRequestUseMergePatch) {
+			return reconcile.Result{}, clientutil.PatchStatus(ctx, w.client, group.local, func() (client.Object, bool, error) {
+				apimeta.SetStatusCondition(&group.local.Status.Conditions, finishCond)
+				return group.local, true, nil
+			})
+		}
+
 		wlPatch := workload.BaseSSAWorkload(group.local, false)
-		apimeta.SetStatusCondition(&wlPatch.Status.Conditions, metav1.Condition{
-			Type:    kueue.WorkloadFinished,
-			Status:  metav1.ConditionTrue,
-			Reason:  remoteFinishedCond.Reason,
-			Message: remoteFinishedCond.Message,
-		})
+		apimeta.SetStatusCondition(&wlPatch.Status.Conditions, finishCond)
 		return reconcile.Result{}, w.client.Status().Patch(ctx, wlPatch, client.Apply, client.FieldOwner(kueue.MultiKueueControllerName+"-finish"), client.ForceOwnership)
 	}
 
@@ -383,22 +394,23 @@ func (w *wlReconciler) reconcileGroup(ctx context.Context, group *wlGroup) (reco
 		}
 
 		if acs.State != kueue.CheckStateRetry && acs.State != kueue.CheckStateRejected {
-			if group.jobAdapter.KeepAdmissionCheckPending() {
-				acs.State = kueue.CheckStatePending
-			} else {
-				acs.State = kueue.CheckStateReady
-			}
-			// update the message
-			acs.Message = fmt.Sprintf("The workload got reservation on %q", reservingRemote)
-			// update the transition time since is used to detect the lost worker state.
-			acs.LastTransitionTime = metav1.NewTime(w.clock.Now())
+			if err := workload.PatchAdmissionStatus(ctx, w.client, group.local, w.clock, func() (*kueue.Workload, bool, error) {
+				if group.jobAdapter.KeepAdmissionCheckPending() {
+					acs.State = kueue.CheckStatePending
+				} else {
+					acs.State = kueue.CheckStateReady
+				}
+				// update the message
+				acs.Message = fmt.Sprintf("The workload got reservation on %q", reservingRemote)
+				// update the transition time since is used to detect the lost worker state.
+				acs.LastTransitionTime = metav1.NewTime(w.clock.Now())
 
-			workload.SetAdmissionCheckState(&group.local.Status.AdmissionChecks, *acs, w.clock)
-			// Set the cluster name to the reserving remote and clear the nominated clusters.
-			group.local.Status.ClusterName = &reservingRemote
-			group.local.Status.NominatedClusterNames = nil
-
-			if err := workload.ApplyAdmissionStatus(ctx, w.client, group.local, true, w.clock); err != nil {
+				workload.SetAdmissionCheckState(&group.local.Status.AdmissionChecks, *acs, w.clock)
+				// Set the cluster name to the reserving remote and clear the nominated clusters.
+				group.local.Status.ClusterName = &reservingRemote
+				group.local.Status.NominatedClusterNames = nil
+				return group.local, true, nil
+			}); err != nil {
 				log.V(2).Error(err, "Failed to patch workload", "workload", klog.KObj(group.local))
 				return reconcile.Result{}, err
 			}
@@ -435,8 +447,10 @@ func (w *wlReconciler) nominateAndSynchronizeWorkers(ctx context.Context, group 
 			nominatedWorkers = append(nominatedWorkers, workerName)
 		}
 		if group.local.Status.ClusterName == nil && !equality.Semantic.DeepEqual(group.local.Status.NominatedClusterNames, nominatedWorkers) {
-			group.local.Status.NominatedClusterNames = nominatedWorkers
-			if err := workload.ApplyAdmissionStatus(ctx, w.client, group.local, true, w.clock); err != nil {
+			if err := workload.PatchAdmissionStatus(ctx, w.client, group.local, w.clock, func() (*kueue.Workload, bool, error) {
+				group.local.Status.NominatedClusterNames = nominatedWorkers
+				return group.local, true, nil
+			}); err != nil {
 				log.V(2).Error(err, "Failed to patch nominated clusters", "workload", klog.KObj(group.local))
 				return reconcile.Result{}, err
 			}

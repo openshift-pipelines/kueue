@@ -509,13 +509,13 @@ func (r *JobReconciler) ReconcileGenericJob(ctx context.Context, req ctrl.Reques
 			if condition.Status == metav1.ConditionTrue {
 				cqName := wl.Status.Admission.ClusterQueue
 				queuedUntilReadyWaitTime := workload.QueuedWaitTime(wl, r.clock)
-				metrics.ReadyWaitTime(cqName, queuedUntilReadyWaitTime)
+				metrics.ReadyWaitTime(cqName, wl.Spec.PriorityClassName, queuedUntilReadyWaitTime)
 				admittedCond := apimeta.FindStatusCondition(wl.Status.Conditions, kueue.WorkloadAdmitted)
 				admittedUntilReadyWaitTime := condition.LastTransitionTime.Sub(admittedCond.LastTransitionTime.Time)
-				metrics.AdmittedUntilReadyWaitTime(cqName, admittedUntilReadyWaitTime)
+				metrics.ReportAdmittedUntilReadyWaitTime(cqName, wl.Spec.PriorityClassName, admittedUntilReadyWaitTime)
 				if features.Enabled(features.LocalQueueMetrics) {
-					metrics.LocalQueueReadyWaitTime(metrics.LQRefFromWorkload(wl), queuedUntilReadyWaitTime)
-					metrics.LocalQueueAdmittedUntilReadyWaitTime(metrics.LQRefFromWorkload(wl), admittedUntilReadyWaitTime)
+					metrics.LocalQueueReadyWaitTime(metrics.LQRefFromWorkload(wl), wl.Spec.PriorityClassName, queuedUntilReadyWaitTime)
+					metrics.ReportLocalQueueAdmittedUntilReadyWaitTime(metrics.LQRefFromWorkload(wl), wl.Spec.PriorityClassName, admittedUntilReadyWaitTime)
 				}
 			}
 			return ctrl.Result{}, nil
@@ -533,11 +533,15 @@ func (r *JobReconciler) ReconcileGenericJob(ctx context.Context, req ctrl.Reques
 		if workload.HasQuotaReservation(wl) {
 			if !job.IsActive() {
 				log.V(6).Info("The job is no longer active, clear the workloads admission")
-				// The requeued condition status set to true only on EvictedByPreemption
-				setRequeued := evCond.Reason == kueue.WorkloadEvictedByPreemption
-				workload.SetRequeuedCondition(wl, evCond.Reason, evCond.Message, setRequeued)
-				_ = workload.UnsetQuotaReservationWithCondition(wl, "Pending", evCond.Message, r.clock.Now())
-				err := workload.ApplyAdmissionStatus(ctx, r.client, wl, true, r.clock)
+				err := workload.PatchAdmissionStatus(ctx, r.client, wl, r.clock, func() (*kueue.Workload, bool, error) {
+					// The requeued condition status set to true only on EvictedByPreemption
+					setRequeued := evCond.Reason == kueue.WorkloadEvictedByPreemption
+					updated := workload.SetRequeuedCondition(wl, evCond.Reason, evCond.Message, setRequeued)
+					if workload.UnsetQuotaReservationWithCondition(wl, "Pending", evCond.Message, r.clock.Now()) {
+						updated = true
+					}
+					return wl, updated, nil
+				})
 				if err != nil {
 					return ctrl.Result{}, fmt.Errorf("clearing admission: %w", err)
 				}
